@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FX калькулятор</title>
+
+<!-- PWA -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#007aff">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="apple-touch-icon" href="icon-192.png">
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 14px;
+  font-family: system-ui, -apple-system, Arial, sans-serif;
+  background: #f2f2f7;
+  color: #111;
+}
+
+.container {
+  background: #fff;
+  padding: 18px;
+  border-radius: 18px;
+  max-width: 420px;
+  margin: auto;
+  box-shadow: 0 4px 20px rgba(0,0,0,.08);
+}
+
+h1 {
+  text-align: center;
+  margin: 0 0 18px;
+  font-size: 22px;
+}
+
+label {
+  margin-top: 14px;
+  font-size: 14px;
+  font-weight: 600;
+  display: block;
+}
+
+input, select {
+  width: 100%;
+  margin-top: 6px;
+  padding: 12px 14px;
+  font-size: 18px;
+  border-radius: 12px;
+  border: 1px solid #ccc;
+}
+
+.hidden { display: none; }
+
+.row {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+button {
+  flex: 1;
+  padding: 14px;
+  font-size: 16px;
+  font-weight: 600;
+  border-radius: 14px;
+  border: none;
+  color: white;
+  cursor: pointer;
+}
+
+button.secondary { background: #5856d6; }
+button.online    { background: #007aff; }
+button.offline   { background: #ff9500; }
+button.clear     { background: #8e8e93; }
+
+.toggle {
+  margin-top: 24px;
+  padding: 12px 14px;
+  background: #f2f2f7;
+  border-radius: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+}
+
+.toggle span {
+  font-size: 13px;
+  color: #666;
+}
+
+.calc-box {
+  display: none;
+  margin-top: 12px;
+}
+
+.result {
+  margin-top: 20px;
+  padding: 16px;
+  background: #f9f9f9;
+  border-radius: 14px;
+  font-family: ui-monospace, monospace;
+  font-size: 15px;
+  white-space: pre-line;
+  min-height: 90px;
+}
+
+/* 🔽 ЕДИНСТВЕННОЕ ДОБАВЛЕНИЕ */
+.fx-green {
+  color: #1f9d3a;
+  font-weight: 700;
+}
+
+.meta {
+  margin-top: 10px;
+  font-size: 12px;
+  text-align: center;
+  color: #666;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+  <h1>FX калькулятор</h1>
+
+  <label>Сумма</label>
+  <input id="amount" placeholder="1000">
+
+  <label>Из</label>
+  <select id="from">
+    <option>USD</option>
+    <option>EUR</option>
+    <option>RUB</option>
+    <option>VND</option>
+    <option>THB</option>
+    <option>SGD</option>
+    <option>MYR</option>
+    <option>IDR</option>
+    <option>CNY</option>
+    <option>UAH</option>
+    <option value="OTHER">Другая...</option>
+  </select>
+  <input id="fromOther" class="hidden" placeholder="Код валюты">
+
+  <label>В</label>
+  <select id="to">
+    <option>USD</option>
+    <option>EUR</option>
+    <option>RUB</option>
+    <option>VND</option>
+    <option>THB</option>
+    <option>SGD</option>
+    <option>MYR</option>
+    <option>IDR</option>
+    <option>CNY</option>
+    <option>UAH</option>
+    <option value="OTHER">Другая...</option>
+  </select>
+  <input id="toOther" class="hidden" placeholder="Код валюты">
+
+  <div class="row">
+    <button class="secondary" onclick="swap()">↔ Поменять</button>
+    <button id="modeBtn" onclick="toggleMode()">OFFLINE</button>
+    <button class="clear" onclick="clearAll()">Очистить</button>
+  </div>
+
+  <label>Ручной курс</label>
+  <input id="manualRate" placeholder="например 96.50">
+
+  <div class="result" id="output">—</div>
+  <div class="meta" id="meta">Курсы не загружены</div>
+
+  <div class="toggle" onclick="toggleCalc()">
+    Калькулятор <span id="calcArrow">▼</span>
+  </div>
+
+  <div class="calc-box" id="calcBox">
+    <label>Выражение</label>
+    <input id="calcInput" placeholder="(100+250)*3">
+    <div class="row">
+      <button class="secondary" onclick="calcEval()">Посчитать</button>
+      <button class="offline" onclick="applyCalc()">В FX</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API_KEY = "881800ddc11637e100f88122";
+const API = `https://v6.exchangerate-api.com/v6/${API_KEY}/latest/USD`;
+
+const els = {
+  amount, from, to, fromOther, toOther,
+  manual: manualRate, output, meta,
+  modeBtn, calcInput, calcBox, calcArrow
+};
+
+let rates = JSON.parse(localStorage.getItem("rates") || "{}");
+let offline = JSON.parse(localStorage.getItem("offline") ?? "true");
+let lastUpdate = localStorage.getItem("lastUpdate");
+let calcResult = null;
+
+init();
+
+function init() {
+  els.amount.value = localStorage.getItem("amount") || "";
+  els.from.value = localStorage.getItem("from") || "USD";
+  els.to.value = localStorage.getItem("to") || "EUR";
+  els.manual.value = localStorage.getItem("manual") || "";
+
+  setModeUI();
+  toggleOther();
+
+  if (lastUpdate) {
+    els.meta.textContent = `Курс обновлён: ${lastUpdate}`;
+  }
+
+  calculate();
+}
+
+function setModeUI() {
+  els.modeBtn.className = offline ? "offline" : "online";
+  els.modeBtn.textContent = offline ? "OFFLINE" : "ONLINE";
+}
+
+function toggleMode() {
+  offline = !offline;
+  localStorage.setItem("offline", JSON.stringify(offline));
+  setModeUI();
+  if (!offline) loadRates(true);
+}
+
+async function loadRates(force=false) {
+  if (offline && !force) return;
+  try {
+    const r = await fetch(API);
+    const d = await r.json();
+    rates = d.conversion_rates;
+    localStorage.setItem("rates", JSON.stringify(rates));
+
+    lastUpdate = new Date().toLocaleString("ru-RU");
+    localStorage.setItem("lastUpdate", lastUpdate);
+    els.meta.textContent = `Курс обновлён: ${lastUpdate}`;
+  } catch {
+    els.meta.textContent = "Ошибка загрузки • кэш";
+  }
+}
+
+function real(sel, other) {
+  if (sel.value !== "OTHER") return sel.value;
+  const c = other.value.trim().toUpperCase();
+  return /^[A-Z]{3}$/.test(c) ? c : null;
+}
+
+function toggleOther() {
+  els.fromOther.classList.toggle("hidden", els.from.value !== "OTHER");
+  els.toOther.classList.toggle("hidden", els.to.value !== "OTHER");
+}
+
+function calculate() {
+  toggleOther();
+
+  const amt = parseFloat(els.amount.value);
+  if (!amt) { els.output.textContent = "Введите сумму"; return; }
+
+  const f = real(els.from, els.fromOther);
+  const t = real(els.to, els.toOther);
+  if (!f || !t) { els.output.textContent = "Ошибка валюты"; return; }
+
+  const rate = els.manual.value
+    ? parseFloat(els.manual.value)
+    : rates[f] && rates[t] ? rates[t] / rates[f] : null;
+
+  if (!rate) { els.output.textContent = "Нет курса"; return; }
+
+  const result = amt * rate;
+
+  els.output.innerHTML =
+`${amt} ${f}
+↓
+<span class="fx-green">${result.toFixed(2)} ${t}</span>
+
+Курс: 1 ${f} = ${rate.toFixed(6)} ${t}`;
+
+  localStorage.setItem("amount", els.amount.value);
+  localStorage.setItem("from", els.from.value);
+  localStorage.setItem("to", els.to.value);
+  localStorage.setItem("manual", els.manual.value);
+}
+
+function swap() {
+  [els.from.value, els.to.value] = [els.to.value, els.from.value];
+  calculate();
+}
+
+function clearAll() {
+  els.amount.value = "";
+  els.manual.value = "";
+  els.output.textContent = "—";
+}
+
+function toggleCalc() {
+  const open = els.calcBox.style.display === "block";
+  els.calcBox.style.display = open ? "none" : "block";
+  els.calcArrow.textContent = open ? "▼" : "▲";
+}
+
+function calcEval() {
+  try {
+    const expr = els.calcInput.value.replace(',', '.').replace(/[^0-9+\-*/().]/g, '');
+    const res = Function(`return (${expr})`)();
+    if (!isFinite(res)) throw 1;
+    calcResult = +res.toFixed(4);
+    els.calcInput.value = calcResult;
+  } catch {
+    els.calcInput.value = "Ошибка";
+  }
+}
+
+function applyCalc() {
+  if (calcResult === null) return;
+  els.amount.value = calcResult;
+  calculate();
+}
+
+["input","change"].forEach(e =>
+  document.addEventListener(e, ev => {
+    if (["INPUT","SELECT"].includes(ev.target.tagName)) calculate();
+  })
+);
+</script>
+
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./service-worker.js');
+}
+</script>
+
+</body>
+</html>
