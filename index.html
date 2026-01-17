@@ -109,7 +109,6 @@ button.clear     { background: #8e8e93; }
   min-height: 90px;
 }
 
-/* 🔽 ЕДИНСТВЕННОЕ ДОБАВЛЕНИЕ */
 .fx-green {
   color: #1f9d3a;
   font-weight: 700;
@@ -204,6 +203,7 @@ let rates = JSON.parse(localStorage.getItem("rates") || "{}");
 let offline = JSON.parse(localStorage.getItem("offline") ?? "true");
 let lastUpdate = localStorage.getItem("lastUpdate");
 let calcResult = null;
+let lastResult = null; // ← ВАЖНО
 
 init();
 
@@ -279,6 +279,7 @@ function calculate() {
   if (!rate) { els.output.textContent = "Нет курса"; return; }
 
   const result = amt * rate;
+  lastResult = result; // ← ЗАПОМИНАЕМ
 
   els.output.innerHTML =
 `${amt} ${f}
@@ -294,6 +295,9 @@ function calculate() {
 }
 
 function swap() {
+  if (lastResult !== null) {
+    els.amount.value = lastResult.toFixed(2);
+  }
   [els.from.value, els.to.value] = [els.to.value, els.from.value];
   calculate();
 }
